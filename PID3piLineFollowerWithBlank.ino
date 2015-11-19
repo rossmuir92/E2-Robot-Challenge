@@ -41,6 +41,8 @@ const char demo_name_line2[] PROGMEM = "follower";
 // A couple of simple tunes, stored in program space.
 const char welcome[] PROGMEM = ">g32>>c32";
 const char go[] PROGMEM = "L16 cdegreg4";
+const char alertBlank[] PROGMEM = ">g32>>";
+const char alertFilled[] PROGMEM = ">>c32>>";
 
 // Data for generating the characters used in load_custom_characters
 // and display_readings.  By reading levels[] starting at various
@@ -198,7 +200,8 @@ void setup()
 
 bool isOnBlank(unsigned int *sensors, unsigned int threshold)
 {
-  return sensors[0] < threshold &&
+//  return sensors[2] < 34952;
+    return sensors[0] < threshold &&
        sensors[1] < threshold &&
        sensors[2] < threshold &&
        sensors[3] < threshold &&
@@ -223,7 +226,6 @@ void loop()
   // the "sensors" argument to read_line() here, even though we
   // are not interested in the individual sensor readings.
   unsigned int position = robot.readLine(sensors, IR_EMITTERS_ON);
-
   // The "proportional" term should be 0 when we are on the line.
   int proportional = (int)position - 2000;
 
@@ -246,7 +248,7 @@ void loop()
 
   // Compute the actual motor settings.  We never set either motor
   // to a negative value.
-  const int maximum = 60;
+  const int maximum = 30;
   if (power_difference > maximum)
     power_difference = maximum;
   if (power_difference < -maximum)
@@ -258,8 +260,11 @@ void loop()
     OrangutanMotors::setSpeeds(maximum, maximum - power_difference);
 
 
-  if (isOnBlank(sensors, 800)){
-  OrangutanBuzzer::playFromProgramSpace(go); 
+  if (isOnBlank(sensors, 300)){
+    OrangutanBuzzer::playFromProgramSpace(alertBlank); 
+  }
+  else if (isOnFilled(sensors, 800)) {
+    OrangutanLCD::print(4);
   }
 }
  
