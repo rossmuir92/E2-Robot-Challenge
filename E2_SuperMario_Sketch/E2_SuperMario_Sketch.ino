@@ -20,16 +20,23 @@
 #include <OrangutanPushbuttons.h>
 #include <OrangutanBuzzer.h>
 
+OrangutanBuzzer buzzer;
 Pololu3pi robot;
 unsigned int sensors[5]; // an array to hold sensor values
 unsigned int last_proportional = 0;
+int last_beep = 5;
 long integral = 0;
+unsigned int currentIdx;
+
 
 
 // This include file allows data to be stored in program space.  The
 // ATmega168 has 16k of program space compared to 1k of RAM, so large
 // pieces of static data should be stored in program space.
 #include <avr/pgmspace.h>
+
+// This function loads custom characters into the LCD.  Up to 8
+// characters can be loaded; we use them for 7 levels of a bar graph.
 
 // Introductory messages.  The "PROGMEM" identifier causes the data to
 // go into program space.
@@ -38,16 +45,71 @@ const char welcome_line2[] PROGMEM = "3\xf7 Robot";
 const char demo_name_line1[] PROGMEM = "PID Line";
 const char demo_name_line2[] PROGMEM = "follower";
 
+
 // A couple of simple tunes, stored in program space.
 const char welcome[] PROGMEM = ">g32>>c32";
 const char go[] PROGMEM = "L16 cdegreg4";
-const char alertBlank[] PROGMEM = ">g32>>";
-const char alertFilled[] PROGMEM = ">>c32>>";
-
+const char coinSound[] PROGMEM = "o5b16>e4";
+const char jumpSound[] PROGMEM = "o5rra16<<a8g8";
+const char oneUpSound[] PROGMEM = "o6l8 eg>e>c>d>g";
 // Data for generating the characters used in load_custom_characters
 // and display_readings.  By reading levels[] starting at various
 // offsets, we can generate all of the 7 extra characters needed for a
 // bargraph.  This is also stored in program space.
+
+#define MELODY_LENGTH 95
+ 
+// These arrays take up a total of 285 bytes of RAM (out of a 1k limit)
+unsigned char note[MELODY_LENGTH] = 
+{
+  NOTE_E(5), SILENT_NOTE, NOTE_E(5), SILENT_NOTE, 
+  NOTE_E(5), SILENT_NOTE, NOTE_C(5), NOTE_E(5),
+  NOTE_G(5), SILENT_NOTE, NOTE_G(4), SILENT_NOTE,
+ 
+  NOTE_C(5), NOTE_G(4), SILENT_NOTE, NOTE_E(4), NOTE_A(4), 
+  NOTE_B(4), NOTE_B_FLAT(4), NOTE_A(4), NOTE_G(4),
+  NOTE_E(5), NOTE_G(5), NOTE_A(5), NOTE_F(5), NOTE_G(5), 
+  SILENT_NOTE, NOTE_E(5), NOTE_C(5), NOTE_D(5), NOTE_B(4),
+ 
+  NOTE_C(5), NOTE_G(4), SILENT_NOTE, NOTE_E(4), NOTE_A(4), 
+  NOTE_B(4), NOTE_B_FLAT(4), NOTE_A(4), NOTE_G(4),
+  NOTE_E(5), NOTE_G(5), NOTE_A(5), NOTE_F(5), NOTE_G(5), 
+  SILENT_NOTE, NOTE_E(5), NOTE_C(5), NOTE_D(5), NOTE_B(4),
+ 
+  SILENT_NOTE, NOTE_G(5), NOTE_F_SHARP(5), NOTE_F(5),
+  NOTE_D_SHARP(5), NOTE_E(5), SILENT_NOTE, NOTE_G_SHARP(4),
+  NOTE_A(4), NOTE_C(5), SILENT_NOTE, NOTE_A(4), NOTE_C(5), NOTE_D(5),
+ 
+  SILENT_NOTE, NOTE_G(5), NOTE_F_SHARP(5), NOTE_F(5),
+  NOTE_D_SHARP(5), NOTE_E(5), SILENT_NOTE,
+  NOTE_C(6), SILENT_NOTE, NOTE_C(6), SILENT_NOTE, NOTE_C(6),
+ 
+  SILENT_NOTE, NOTE_G(5), NOTE_F_SHARP(5), NOTE_F(5),
+  NOTE_D_SHARP(5), NOTE_E(5), SILENT_NOTE,
+  NOTE_G_SHARP(4), NOTE_A(4), NOTE_C(5), SILENT_NOTE, 
+  NOTE_A(4), NOTE_C(5), NOTE_D(5),
+ 
+  SILENT_NOTE, NOTE_E_FLAT(5), SILENT_NOTE, NOTE_D(5), NOTE_C(5)
+};
+ 
+unsigned int duration[MELODY_LENGTH] =
+{
+  100, 25, 125, 125, 125, 125, 125, 250, 250, 250, 250, 250,
+ 
+  375, 125, 250, 375, 250, 250, 125, 250, 167, 167, 167, 250, 125, 125,
+  125, 250, 125, 125, 375,
+ 
+  375, 125, 250, 375, 250, 250, 125, 250, 167, 167, 167, 250, 125, 125,
+  125, 250, 125, 125, 375,
+ 
+  250, 125, 125, 125, 250, 125, 125, 125, 125, 125, 125, 125, 125, 125,
+ 
+  250, 125, 125, 125, 250, 125, 125, 200, 50, 100, 25, 500,
+ 
+  250, 125, 125, 125, 250, 125, 125, 125, 125, 125, 125, 125, 125, 125,
+ 
+  250, 250, 125, 375, 500
+};
 const char levels[] PROGMEM = {
   0b00000,
   0b00000,
@@ -64,9 +126,6 @@ const char levels[] PROGMEM = {
   0b11111,
   0b11111
 };
-
-// This function loads custom characters into the LCD.  Up to 8
-// characters can be loaded; we use them for 7 levels of a bar graph.
 void load_custom_characters()
 {
   OrangutanLCD::loadCustomCharacter(levels + 0, 0); // no offset, e.g. one bar
@@ -107,7 +166,7 @@ void display_readings(const unsigned int *calibrated_values)
 void setup()
 {
   unsigned int counter; // used as a simple timer
-
+  currentIdx = 0;
   // This must be called at the beginning of 3pi code, to set up the
   // sensors.  We use a value of 2000 for the timeout, which
   // corresponds to 2000*0.4 us = 0.8 ms on our 20 MHz processor.
@@ -119,7 +178,7 @@ void setup()
   OrangutanLCD::printFromProgramSpace(welcome_line1);
   OrangutanLCD::gotoXY(0, 1);
   OrangutanLCD::printFromProgramSpace(welcome_line2);
-  OrangutanBuzzer::playFromProgramSpace(welcome);
+  buzzer.playFromProgramSpace(welcome);
   delay(1000);
 
   OrangutanLCD::clear();
@@ -191,45 +250,32 @@ void setup()
 
   OrangutanLCD::clear();
 
-  OrangutanLCD::print("Go!");		
+  OrangutanLCD::print("Go!");    ;
 
   // Play music and wait for it to finish before we start driving.
-  OrangutanBuzzer::playFromProgramSpace(go);
-  while(OrangutanBuzzer::isPlaying());
+  //buzzer.playFromProgramSpace(go);
+  //while(buzzer.isPlaying());
 }
 
-bool isOnBlank(unsigned int *sensors, unsigned int threshold)
-{
-//  return sensors[2] < 34952;
-    return sensors[0] < threshold &&
-       sensors[1] < threshold &&
-       sensors[2] < threshold &&
-       sensors[3] < threshold &&
-       sensors[4] < threshold;
-}
-
-// returns true if all sensors are above some threshold
-bool isOnFilled(unsigned int *sensors, unsigned int threshold)
-{
-  return (sensors[0] > threshold &&
-       sensors[1] > threshold &&
-       sensors[2] > threshold &&
-       sensors[3] > threshold &&
-       sensors[4] > threshold);
-}
 
 // The main function.  This function is repeatedly called by
 // the Arduino framework.
+  
 void loop()
 {
-  // Get the position of the line.  Note that we *must* provide
-  // the "sensors" argument to read_line() here, even though we
-  // are not interested in the individual sensor readings.
-  unsigned int position = robot.readLine(sensors, IR_EMITTERS_ON);
+
+ // if we haven't finished playing the song and 
+  // the buzzer is ready for the next note, play the next note
+  /*if (currentIdx < MELODY_LENGTH && !buzzer.isPlaying())
+  {
+    // play note at max volume
+    buzzer.playNote(note[currentIdx], duration[currentIdx], 15);
+    currentIdx++;
+  }*/
+ unsigned int position = robot.readLine(sensors, IR_EMITTERS_ON);
   // The "proportional" term should be 0 when we are on the line.
   int proportional = (int)position - 2000;
-
-  // Compute the derivative (change) and integral (sum) of the
+ // Compute the derivative (change) and integral (sum) of the
   // position.
   int derivative = proportional - last_proportional;
   integral += proportional;
@@ -248,7 +294,7 @@ void loop()
 
   // Compute the actual motor settings.  We never set either motor
   // to a negative value.
-  const int maximum = 30;
+  int maximum = 40;
   if (power_difference > maximum)
     power_difference = maximum;
   if (power_difference < -maximum)
@@ -259,12 +305,38 @@ void loop()
   else
     OrangutanMotors::setSpeeds(maximum, maximum - power_difference);
 
-
-  if (isOnBlank(sensors, 300)){
-    OrangutanBuzzer::playFromProgramSpace(alertBlank); 
-  }
-  else if (isOnFilled(sensors, 800)) {
-    OrangutanLCD::print(4);
+  if (isOnBlank(sensors, 200)){
+    OrangutanLCD::clear();
+    OrangutanLCD::print((unsigned int)last_beep);
+    if (last_beep < 200){
+    buzzer.playFromProgramSpace(oneUpSound);
+    }else if (last_beep > 200){
+    buzzer.playFromProgramSpace(coinSound);
+    }   
+    last_beep++;
   }
 }
+bool isOnBlank(unsigned int *sensors, unsigned int threshold)
+{
+    return sensors[0] < threshold &&
+       sensors[1] < threshold &&
+       sensors[2] < threshold &&
+       sensors[3] < threshold &&
+       sensors[4] < threshold;
+}
+
+// returns true if all sensors are above some threshold
+bool isOnFilled(unsigned int *sensors, unsigned int threshold)
+{
+  return (sensors[0] > threshold &&
+       sensors[1] > threshold &&
+       sensors[2] > threshold &&
+       sensors[3] > threshold &&
+       sensors[4] > threshold);
+}
+
+
+
+
  
+
