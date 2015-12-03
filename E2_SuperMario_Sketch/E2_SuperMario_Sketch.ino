@@ -1,14 +1,14 @@
 /*
- * PID3piLineFollower - demo code for the Pololu 3pi Robot
- * 
- * This code will follow a black line on a white background, using a
- * PID-based algorithm.
- *
- * http://www.pololu.com/docs/0J21
- * http://www.pololu.com
- * http://forum.pololu.com
- *
- */
+   PID3piLineFollower - demo code for the Pololu 3pi Robot
+
+   This code will follow a black line on a white background, using a
+   PID-based algorithm.
+
+   http://www.pololu.com/docs/0J21
+   http://www.pololu.com
+   http://forum.pololu.com
+
+*/
 
 // The following libraries will be needed by this demo
 #include <Pololu3pi.h>
@@ -24,10 +24,12 @@ OrangutanBuzzer buzzer;
 Pololu3pi robot;
 unsigned int sensors[5]; // an array to hold sensor values
 unsigned int last_proportional = 0;
-int last_beep = 5;
+unsigned int last_beep;
 long integral = 0;
 unsigned int currentIdx;
-
+unsigned int speed = 30;
+bool isFinished = false;
+bool isPlayMusic = false;
 
 
 // This include file allows data to be stored in program space.  The
@@ -50,7 +52,7 @@ const char demo_name_line2[] PROGMEM = "follower";
 const char welcome[] PROGMEM = ">g32>>c32";
 const char go[] PROGMEM = "L16 cdegreg4";
 const char coinSound[] PROGMEM = "o5b16>e4";
-const char jumpSound[] PROGMEM = "o5rra16<<a8g8";
+const char jumpSound[] PROGMEM = "o5rra16<<a8a";
 const char oneUpSound[] PROGMEM = "o6l8 eg>e>c>d>g";
 // Data for generating the characters used in load_custom_characters
 // and display_readings.  By reading levels[] starting at various
@@ -58,56 +60,56 @@ const char oneUpSound[] PROGMEM = "o6l8 eg>e>c>d>g";
 // bargraph.  This is also stored in program space.
 
 #define MELODY_LENGTH 95
- 
+
 // These arrays take up a total of 285 bytes of RAM (out of a 1k limit)
-unsigned char note[MELODY_LENGTH] = 
+unsigned char note[MELODY_LENGTH] =
 {
-  NOTE_E(5), SILENT_NOTE, NOTE_E(5), SILENT_NOTE, 
+  NOTE_E(5), SILENT_NOTE, NOTE_E(5), SILENT_NOTE,
   NOTE_E(5), SILENT_NOTE, NOTE_C(5), NOTE_E(5),
   NOTE_G(5), SILENT_NOTE, NOTE_G(4), SILENT_NOTE,
- 
-  NOTE_C(5), NOTE_G(4), SILENT_NOTE, NOTE_E(4), NOTE_A(4), 
+
+  NOTE_C(5), NOTE_G(4), SILENT_NOTE, NOTE_E(4), NOTE_A(4),
   NOTE_B(4), NOTE_B_FLAT(4), NOTE_A(4), NOTE_G(4),
-  NOTE_E(5), NOTE_G(5), NOTE_A(5), NOTE_F(5), NOTE_G(5), 
+  NOTE_E(5), NOTE_G(5), NOTE_A(5), NOTE_F(5), NOTE_G(5),
   SILENT_NOTE, NOTE_E(5), NOTE_C(5), NOTE_D(5), NOTE_B(4),
- 
-  NOTE_C(5), NOTE_G(4), SILENT_NOTE, NOTE_E(4), NOTE_A(4), 
+
+  NOTE_C(5), NOTE_G(4), SILENT_NOTE, NOTE_E(4), NOTE_A(4),
   NOTE_B(4), NOTE_B_FLAT(4), NOTE_A(4), NOTE_G(4),
-  NOTE_E(5), NOTE_G(5), NOTE_A(5), NOTE_F(5), NOTE_G(5), 
+  NOTE_E(5), NOTE_G(5), NOTE_A(5), NOTE_F(5), NOTE_G(5),
   SILENT_NOTE, NOTE_E(5), NOTE_C(5), NOTE_D(5), NOTE_B(4),
- 
+
   SILENT_NOTE, NOTE_G(5), NOTE_F_SHARP(5), NOTE_F(5),
   NOTE_D_SHARP(5), NOTE_E(5), SILENT_NOTE, NOTE_G_SHARP(4),
   NOTE_A(4), NOTE_C(5), SILENT_NOTE, NOTE_A(4), NOTE_C(5), NOTE_D(5),
- 
+
   SILENT_NOTE, NOTE_G(5), NOTE_F_SHARP(5), NOTE_F(5),
   NOTE_D_SHARP(5), NOTE_E(5), SILENT_NOTE,
   NOTE_C(6), SILENT_NOTE, NOTE_C(6), SILENT_NOTE, NOTE_C(6),
- 
+
   SILENT_NOTE, NOTE_G(5), NOTE_F_SHARP(5), NOTE_F(5),
   NOTE_D_SHARP(5), NOTE_E(5), SILENT_NOTE,
-  NOTE_G_SHARP(4), NOTE_A(4), NOTE_C(5), SILENT_NOTE, 
+  NOTE_G_SHARP(4), NOTE_A(4), NOTE_C(5), SILENT_NOTE,
   NOTE_A(4), NOTE_C(5), NOTE_D(5),
- 
+
   SILENT_NOTE, NOTE_E_FLAT(5), SILENT_NOTE, NOTE_D(5), NOTE_C(5)
 };
- 
+
 unsigned int duration[MELODY_LENGTH] =
 {
   100, 25, 125, 125, 125, 125, 125, 250, 250, 250, 250, 250,
- 
+
   375, 125, 250, 375, 250, 250, 125, 250, 167, 167, 167, 250, 125, 125,
   125, 250, 125, 125, 375,
- 
+
   375, 125, 250, 375, 250, 250, 125, 250, 167, 167, 167, 250, 125, 125,
   125, 250, 125, 125, 375,
- 
+
   250, 125, 125, 125, 250, 125, 125, 125, 125, 125, 125, 125, 125, 125,
- 
+
   250, 125, 125, 125, 250, 125, 125, 200, 50, 100, 25, 500,
- 
+
   250, 125, 125, 125, 250, 125, 125, 125, 125, 125, 125, 125, 125, 125,
- 
+
   250, 250, 125, 375, 500
 };
 const char levels[] PROGMEM = {
@@ -143,7 +145,7 @@ void display_readings(const unsigned int *calibrated_values)
 {
   unsigned char i;
 
-  for (i=0;i<5;i++) {
+  for (i = 0; i < 5; i++) {
     // Initialize the array of characters that we will use for the
     // graph.  Using the space, an extra copy of the one-bar
     // character, and character 255 (a full black box), we get 10
@@ -167,6 +169,7 @@ void setup()
 {
   unsigned int counter; // used as a simple timer
   currentIdx = 0;
+  last_beep = 0;
   // This must be called at the beginning of 3pi code, to set up the
   // sensors.  We use a value of 2000 for the timeout, which
   // corresponds to 2000*0.4 us = 0.8 ms on our 20 MHz processor.
@@ -208,7 +211,7 @@ void setup()
 
   // Auto-calibration: turn right and left while calibrating the
   // sensors.
-  for (counter=0; counter<80; counter++)
+  for (counter = 0; counter < 80; counter++)
   {
     if (counter < 20 || counter >= 60)
       OrangutanMotors::setSpeeds(40, -40);
@@ -260,83 +263,106 @@ void setup()
 
 // The main function.  This function is repeatedly called by
 // the Arduino framework.
-  
+
 void loop()
 {
 
- // if we haven't finished playing the song and 
-  // the buzzer is ready for the next note, play the next note
-  /*if (currentIdx < MELODY_LENGTH && !buzzer.isPlaying())
-  {
-    // play note at max volume
-    buzzer.playNote(note[currentIdx], duration[currentIdx], 15);
-    currentIdx++;
-  }*/
- unsigned int position = robot.readLine(sensors, IR_EMITTERS_ON);
-  // The "proportional" term should be 0 when we are on the line.
-  int proportional = (int)position - 2000;
- // Compute the derivative (change) and integral (sum) of the
-  // position.
-  int derivative = proportional - last_proportional;
-  integral += proportional;
-
-  // Remember the last position.
-  last_proportional = proportional;
-
-  // Compute the difference between the two motor power settings,
-  // m1 - m2.  If this is a positive number the robot will turn
-  // to the right.  If it is a negative number, the robot will
-  // turn to the left, and the magnitude of the number determines
-  // the sharpness of the turn.  You can adjust the constants by which
-  // the proportional, integral, and derivative terms are multiplied to
-  // improve performance.
-  int power_difference = proportional/20 + integral/10000 + derivative*3/2;
-
-  // Compute the actual motor settings.  We never set either motor
-  // to a negative value.
-  int maximum = 40;
-  if (power_difference > maximum)
-    power_difference = maximum;
-  if (power_difference < -maximum)
-    power_difference = -maximum;
-
-  if (power_difference < 0)
-    OrangutanMotors::setSpeeds(maximum + power_difference, maximum);
-  else
-    OrangutanMotors::setSpeeds(maximum, maximum - power_difference);
-
-  if (isOnBlank(sensors, 200)){
+  if (!isPlayMusic){
     OrangutanLCD::clear();
     OrangutanLCD::print((unsigned int)last_beep);
-    if (last_beep < 200){
-    buzzer.playFromProgramSpace(oneUpSound);
-    }else if (last_beep > 200){
-    buzzer.playFromProgramSpace(coinSound);
-    }   
+  }
+    
+  // if we haven't finished playing the song and
+  // the buzzer is ready for the next note, play the next note
+
+  // Get the position of the line.  Note that we *must* provide
+  // the "sensors" argument to read_line() here, even though we
+  // are not interested in the individual sensor readings.
+  unsigned int position = robot.readLine(sensors, IR_EMITTERS_ON);
+  if (position < 1000)
+  {
+    // We are far to the right of the line: turn left.
+
+    // Set the right motor to 100 and the left motor to zero,
+    // to do a sharp turn to the left.  Note that the maximum
+    // value of either motor speed is 255, so we are driving
+    // it at just about 40% of the max.
+    OrangutanMotors::setSpeeds(0, speed);
+
+    // Just for fun, indicate the direction we are turning on
+    // the LEDs.
+    OrangutanLEDs::left(HIGH);
+    OrangutanLEDs::right(LOW);
+  }
+  else if (position < 3000)
+  {
+    // We are somewhat close to being centered on the line:
+    // drive straight.
+    OrangutanMotors::setSpeeds(speed, speed);
+    OrangutanLEDs::left(HIGH);
+    OrangutanLEDs::right(HIGH);
+  }
+  else
+  {
+    // We are far to the left of the line: turn right.
+    OrangutanMotors::setSpeeds(speed, 0);
+    OrangutanLEDs::left(LOW);
+    OrangutanLEDs::right(HIGH);
+  }
+
+  if (isOnBlank(sensors, 200) && last_beep <= 670) {
+    if (last_beep < 75){
+      buzzer.playFromProgramSpace(oneUpSound);
+      speed = 50;
+    } else if (last_beep > 75 && last_beep < 120) {
+      buzzer.playFromProgramSpace(coinSound);
+    } else if (last_beep > 450 && last_beep < 455){
+      buzzer.playFromProgramSpace(coinSound);
+    }
+    else if (last_beep > 455 && last_beep < 500) {
+      buzzer.playFromProgramSpace(coinSound);
+    }
+    else if (last_beep > 500 && last_beep < 540){
+      buzzer.playFromProgramSpace(coinSound);
+    }
+    else if (last_beep > 600 && last_beep < 620 && !isPlayMusic){
+      buzzer.playFromProgramSpace(coinSound);
+      isPlayMusic = true;
+    }
     last_beep++;
+  } 
+  
+  if (isPlayMusic) {
+    speed = 40;
+    if (currentIdx < MELODY_LENGTH && !buzzer.isPlaying())
+    {
+      // play note at max volume
+      buzzer.playNote(note[currentIdx], duration[currentIdx], 15);
+      currentIdx++;
+    } else if (currentIdx >= MELODY_LENGTH && !buzzer.isPlaying()) {
+      OrangutanMotors::setSpeeds(0, 0);
+      if (!isFinished) {
+        OrangutanLCD::clear();
+        OrangutanLCD::print("Hello");
+        OrangutanLCD::gotoXY(0, 1);
+        OrangutanLCD::print("Princess");
+        isFinished = true;
+      }
+    }
   }
 }
-bool isOnBlank(unsigned int *sensors, unsigned int threshold)
-{
+  bool isOnBlank(unsigned int *sensors, unsigned int threshold)
+  {
     return sensors[0] < threshold &&
-       sensors[1] < threshold &&
-       sensors[2] < threshold &&
-       sensors[3] < threshold &&
-       sensors[4] < threshold;
-}
-
-// returns true if all sensors are above some threshold
-bool isOnFilled(unsigned int *sensors, unsigned int threshold)
-{
-  return (sensors[0] > threshold &&
-       sensors[1] > threshold &&
-       sensors[2] > threshold &&
-       sensors[3] > threshold &&
-       sensors[4] > threshold);
-}
+           sensors[1] < threshold &&
+           sensors[2] < threshold &&
+           sensors[3] < threshold &&
+           sensors[4] < threshold;
+  }
 
 
 
 
- 
+
+
 
