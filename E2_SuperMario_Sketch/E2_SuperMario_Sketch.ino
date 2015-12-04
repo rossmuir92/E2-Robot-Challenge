@@ -30,7 +30,7 @@ unsigned int currentIdx;
 unsigned int speed = 30;
 bool isFinished = false;
 bool isPlayMusic = false;
-
+bool isOnObstacle = false;
 
 // This include file allows data to be stored in program space.  The
 // ATmega168 has 16k of program space compared to 1k of RAM, so large
@@ -254,10 +254,6 @@ void setup()
   OrangutanLCD::clear();
 
   OrangutanLCD::print("Go!");    ;
-
-  // Play music and wait for it to finish before we start driving.
-  //buzzer.playFromProgramSpace(go);
-  //while(buzzer.isPlaying());
 }
 
 
@@ -267,11 +263,11 @@ void setup()
 void loop()
 {
 
-  if (!isPlayMusic){
+  if (!isPlayMusic) {
     OrangutanLCD::clear();
     OrangutanLCD::print((unsigned int)last_beep);
   }
-    
+
   // if we haven't finished playing the song and
   // the buzzer is ready for the next note, play the next note
 
@@ -310,28 +306,37 @@ void loop()
     OrangutanLEDs::right(HIGH);
   }
 
-  if (isOnBlank(sensors, 200) && last_beep <= 670) {
-    if (last_beep < 75){
-      buzzer.playFromProgramSpace(oneUpSound);
-      speed = 50;
-    } else if (last_beep > 75 && last_beep < 120) {
-      buzzer.playFromProgramSpace(coinSound);
-    } else if (last_beep > 450 && last_beep < 455){
-      buzzer.playFromProgramSpace(coinSound);
-    }
-    else if (last_beep > 455 && last_beep < 500) {
-      buzzer.playFromProgramSpace(coinSound);
-    }
-    else if (last_beep > 500 && last_beep < 540){
-      buzzer.playFromProgramSpace(coinSound);
-    }
-    else if (last_beep > 600 && last_beep < 620 && !isPlayMusic){
-      buzzer.playFromProgramSpace(coinSound);
-      isPlayMusic = true;
-    }
-    last_beep++;
-  } 
+
+  if (isOnBlank(sensors, 200) && last_beep <= 700) {
+    if (!isOnObstacle) {  
+      // This code only to be executed at the leading edge of the obstacle.
+      // We use isOnObstacle to prevent repeat executions while the robot is
+      // moving over the rest of the obstacle.
+      isOnObstacle = true;
+      int sum = 0;
+      for (int i = 0; i < 5; i++) {
+        sum = sum + sensors[i];
+      }
   
+      if (last_beep == 0) {
+        buzzer.playFromProgramSpace(oneUpSound);
+        speed = 50;
+      } else if (last_beep == 5 || last_beep == 7) {
+        buzzer.playFromProgramSpace(jumpSound);
+      }
+      else if (last_beep <= 7 && last_beep != 3) {
+        buzzer.playFromProgramSpace(coinSound);
+      }
+      if (last_beep == 7 && !isPlayMusic) {
+        buzzer.playFromProgramSpace(jumpSound);
+        isPlayMusic = true;
+      }
+      last_beep++;
+    }
+  } else {
+    isOnObstacle = false;
+  }
+
   if (isPlayMusic) {
     speed = 40;
     if (currentIdx < MELODY_LENGTH && !buzzer.isPlaying())
@@ -351,14 +356,14 @@ void loop()
     }
   }
 }
-  bool isOnBlank(unsigned int *sensors, unsigned int threshold)
-  {
-    return sensors[0] < threshold &&
-           sensors[1] < threshold &&
-           sensors[2] < threshold &&
-           sensors[3] < threshold &&
-           sensors[4] < threshold;
-  }
+bool isOnBlank(unsigned int *sensors, unsigned int threshold)
+{
+  return sensors[0] < threshold &&
+         sensors[1] < threshold &&
+         sensors[2] < threshold &&
+         sensors[3] < threshold &&
+         sensors[4] < threshold;
+}
 
 
 
